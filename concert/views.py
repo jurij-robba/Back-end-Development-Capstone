@@ -1,20 +1,37 @@
+import requests as req
 from django.contrib.auth import login, logout
-from django.contrib.auth.models import User
-from django.http import HttpResponseRedirect, HttpResponse
-from django.shortcuts import get_object_or_404
-from django.shortcuts import render
-from django.urls import reverse
 from django.contrib.auth.hashers import make_password
+from django.contrib.auth.models import User
+from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
+from django.shortcuts import get_object_or_404, render
+from django.urls import reverse
 
 from concert.forms import LoginForm, SignUpForm
 from concert.models import Concert, ConcertAttending
-import requests as req
-
 
 # Create your views here.
 
-def signup(request):
-    pass
+
+def signup(request: HttpRequest):
+    if request.method == "POST":
+        username = request.POST.get("username")
+        password = request.POST.get("password")
+        try:
+            user = User.objects.filter(username=username).first()
+            if user:
+                return render(
+                    request,
+                    "signup.html",
+                    {"form": SignUpForm, "message": "user already exist"},
+                )
+            user = User.objects.create(
+                username=username, password=make_password(password)
+            )
+            login(request, user)
+            return HttpResponseRedirect(reverse("index"))
+        except User.DoesNotExist:
+            return render(request, "signup.html", {"form": SignUpForm})
+    return render(request, "signup.html", {"form": SignUpForm})
 
 
 def index(request):
@@ -22,24 +39,51 @@ def index(request):
 
 
 def songs(request):
-    # songs = {"songs":[]}
-    # return render(request, "songs.html", {"songs": [insert list here]})
-    pass
+    songs = req.get("http://songs-sn-labs-jurijrobba.labs-prod-openshift-san-a45631dc5778dc6371c67d206ba9ae5c-0000.us-east.containers.appdomain.cloud/song").json()
+    return render(request, "songs.html", {"songs": songs["songs"]})
 
 
 def photos(request):
-    # photos = []
-    # return render(request, "photos.html", {"photos": photos})
-    pass
+    photos = req.get("https://pictures.14t6pt0zhvd4.us-south.codeengine.appdomain.cloud//picture").json()
+    return render(request, "photos.html", {"photos": photos})
 
-def login_view(request):
-    pass
+
+def login_view(request: HttpRequest):
+    if request.method == "POST":
+        username = request.POST.get("username")
+        password = request.POST.get("password")
+        try:
+            user = User.objects.get(username=username)
+            if user.check_password(password):
+                login(request, user)
+                return HttpResponseRedirect(reverse("index"))
+        except User.DoesNotExist:
+            return render(
+                request,
+                "login.html",
+                {"form": LoginForm, "message": "invalid username/password"},
+            )
+    return render(request, "login.html", {"form": LoginForm})
+
 
 def logout_view(request):
-    pass
+    logout(request)
+    return HttpResponseRedirect(reverse("login"))
 
-def concerts(request):
-    pass
+
+def concerts(request: HttpRequest):
+    if request.user.is_authenticated:
+        concert_list = []
+        concert_objects = Concert.objects.all()
+        for item in concert_objects:
+            try:
+                status = item.attendee.filter(user=request.user).first().attending
+            except:
+                status = "-"
+            concert_list.append({"concert": item, "status": status})
+        return render(request, "concerts.html", {"concerts": concert_list})
+    else:
+        return HttpResponseRedirect(reverse("login"))
 
 
 def concert_detail(request, id):
@@ -49,7 +93,15 @@ def concert_detail(request, id):
             status = obj.attendee.filter(user=request.user).first().attending
         except:
             status = "-"
-        return render(request, "concert_detail.html", {"concert_details": obj, "status": status, "attending_choices": ConcertAttending.AttendingChoices.choices})
+        return render(
+            request,
+            "concert_detail.html",
+            {
+                "concert_details": obj,
+                "status": status,
+                "attending_choices": ConcertAttending.AttendingChoices.choices,
+            },
+        )
     else:
         return HttpResponseRedirect(reverse("login"))
     pass
@@ -61,14 +113,15 @@ def concert_attendee(request):
             concert_id = request.POST.get("concert_id")
             attendee_status = request.POST.get("attendee_choice")
             concert_attendee_object = ConcertAttending.objects.filter(
-                concert_id=concert_id, user=request.user).first()
+                concert_id=concert_id, user=request.user
+            ).first()
             if concert_attendee_object:
                 concert_attendee_object.attending = attendee_status
                 concert_attendee_object.save()
             else:
-                ConcertAttending.objects.create(concert_id=concert_id,
-                                                user=request.user,
-                                                attending=attendee_status)
+                ConcertAttending.objects.create(
+                    concert_id=concert_id, user=request.user, attending=attendee_status
+                )
 
         return HttpResponseRedirect(reverse("concerts"))
     else:
