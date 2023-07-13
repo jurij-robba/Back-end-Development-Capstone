@@ -77,7 +77,8 @@ def concerts(request: HttpRequest):
         concert_objects = Concert.objects.all()
         for item in concert_objects:
             try:
-                status = item.attendee.filter(user=request.user).first().attending
+                status = item.attendee.filter(
+                    user=request.user).first().attending
             except:
                 status = "-"
             concert_list.append({"concert": item, "status": status})
